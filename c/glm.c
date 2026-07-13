@@ -46,9 +46,6 @@ static inline int omp_get_thread_num(void){ return 0; }
 #endif
 #ifdef COLI_CUDA
 #include "backend_cuda.h"
-#ifdef COLI_G10_VRAM_CACHE
-#include "../g10/g10_vram_hook.c"
-#endif
 #endif
 #ifdef COLI_METAL
 #include "backend_metal.h"
@@ -3617,6 +3614,9 @@ int main(int argc, char **argv){
         if(g_cuda_ndev<1){ fprintf(stderr,"invalid COLI_GPUS: use a list such as 0,1,2\n"); return 2; }
         g_cuda_enabled=coli_cuda_init(g_cuda_devices,g_cuda_ndev);
         if(!g_cuda_enabled){ fprintf(stderr,"[CUDA] requested backend is unavailable\n"); return 2; }
+#ifdef COLI_G10_VRAM_CACHE
+#include "../g10/g10_vram_hook.c"
+#endif
         g10_vram_init(0);
     }
     g_cuda_dense=getenv("CUDA_DENSE")?atoi(getenv("CUDA_DENSE")):0;
@@ -3784,8 +3784,8 @@ int main(int argc, char **argv){
         uint64_t g10_ev  = g10_vram_cache_evictions();
         double g10_rate  = (g10_h+g10_m) ? 100.0*g10_h/(g10_h+g10_m) : 0.0;
         size_t g10_bytes = g10_vram_cache_bytes();
-        printf("G10 VRAM cache: %d/%d experts resident (%d evictions) | %.2f GB VRAM | %.1f%% hit rate (%llu/%llu)\n",
-               g10_cnt, g10_cap, g10_ev, g10_bytes/1e9, g10_rate,
+        printf("G10 VRAM cache: %d/%d experts resident (%lu evictions) | %.2f GB VRAM | %.1f%% hit rate (%llu/%llu)\n",
+               g10_cnt, g10_cap, (unsigned long)g10_ev, g10_bytes/1e9, g10_rate,
                (unsigned long long)g10_h, (unsigned long long)(g10_h+g10_m));
     }
 #endif
