@@ -177,14 +177,14 @@ typedef struct {
 static void usage_save(Model *m);        /* cache che impara: definita accanto a stats_dump */
 #ifdef COLI_CUDA
 static int g_cuda_enabled;
-#ifdef COLI_G10_VRAM_CACHE
-#include "../g10/g10_vram_hook.c"
-#endif
 static double g_cuda_expert_gb;
 static int g_cuda_dense;
 static int g_cuda_release_host;
 static int g_cuda_devices[COLI_CUDA_MAX_DEVICES], g_cuda_ndev, g_cuda_rr;
 static int64_t g_cuda_dense_projected[COLI_CUDA_MAX_DEVICES];
+#ifdef COLI_G10_VRAM_CACHE
+#include "../g10/g10_vram_hook.c"
+#endif
 static void qt_cuda_reset(QT *t){
     if(t->cuda){ coli_cuda_tensor_free(t->cuda); t->cuda=NULL; }
     t->cuda_failed=0;
