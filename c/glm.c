@@ -46,6 +46,9 @@ static inline int omp_get_thread_num(void){ return 0; }
 #endif
 #ifdef COLI_CUDA
 #include "backend_cuda.h"
+#ifdef COLI_G10_VRAM_CACHE
+#include "../g10/g10_vram_hook.c"
+#endif
 #endif
 #ifdef COLI_METAL
 #include "backend_metal.h"
@@ -1812,7 +1815,10 @@ static void moe(Model *m, Layer *l, int layer, float *x, int S, float *out){
             } else { double t0=now_s();             /* ORIGINALE: blocking parallel load */
                 #pragma omp parallel for schedule(dynamic,1)
                 for(int q=0;q<nmiss;q++) expert_load(m,layer,uniq[base+missk[q]],&m->ws[q],1);
-                m->t_edisk += now_s()-t0; }
+                m->t_edisk += now_s()-t0;
+                /* G10-VC: promote freshly-loaded experts to VRAM cache */
+                for(int q=0;q<nmiss;q++) g10_vram_promote_expert(layer, &m->ws[q]);
+            }
         }
         /* I/O ASINCRONO: readahead (WILLNEED) del blocco SUCCESSIVO mentre calcoliamo
          * questo — il kernel legge in background, le pread dopo trovano cache calda */
@@ -1865,7 +1871,9 @@ static void moe(Model *m, Layer *l, int layer, float *x, int S, float *out){
              * Stays ABOVE the METAL skip: a subset that fell back to the CPU still needs its
              * slot drained here, and under METAL the block-level drain above already ran (this
              * spin is then a no-op). */
-            if(g_pipe && qof[j]>=0){ double tw=now_s(); pipe_wait(qof[j]); m->t_edisk += now_s()-tw; }
+            if(g_pipe && qof[j]>=0){ double tw=now_s(); pipe_wait(qof[j]); m->t_edisk += now_s()-tw;
+                /* G10-VC: promote PIPE-loaded expert to VRAM cache */
+                g10_vram_promote_expert(layer, e); }
 #ifdef COLI_METAL
             /* skip the subsets already computed on GPU */
             if(g_metal_enabled && ((is_miss[j] && !cpu_miss) || (!is_miss[j] && !cpu_res))) continue;
@@ -1894,6 +1902,8 @@ static void moe(Model *m, Layer *l, int layer, float *x, int S, float *out){
                 m->t_emm+=now_s()-t0; continue;
             }
             if(!e->slab) expert_host_ensure(m,layer,e);
+            /* G10-VC: promote expert loaded via host_ensure fallback */
+            g10_vram_promote_expert(layer, e);
 #endif
             expert_gate_up(gg,uu,xg,&e->g,&e->u,nr);
             for(int64_t z=0;z<(int64_t)nr*I;z++) gg[z]=siluf(gg[z])*uu[z];
@@ -3607,6 +3617,7 @@ int main(int argc, char **argv){
         if(g_cuda_ndev<1){ fprintf(stderr,"invalid COLI_GPUS: use a list such as 0,1,2\n"); return 2; }
         g_cuda_enabled=coli_cuda_init(g_cuda_devices,g_cuda_ndev);
         if(!g_cuda_enabled){ fprintf(stderr,"[CUDA] requested backend is unavailable\n"); return 2; }
+        g10_vram_init(0);
     }
     g_cuda_dense=getenv("CUDA_DENSE")?atoi(getenv("CUDA_DENSE")):0;
     g_cuda_expert_gb=getenv("CUDA_EXPERT_GB")?atof(getenv("CUDA_EXPERT_GB")):0;
@@ -3763,6 +3774,20 @@ int main(int argc, char **argv){
     if(m.gpu_expert_count) printf("CUDA expert tier: %d resident experts (%.2f GB) | %llu calls served from VRAM\n",
         m.gpu_expert_count,m.gpu_expert_bytes/1e9,(unsigned long long)m.gpu_expert_calls);
     if(g_cuda_enabled) cuda_stats_print();
+#endif
+#ifdef COLI_G10_VRAM_CACHE
+    if(g_g10_vram_enabled){
+        int g10_cnt  = g10_vram_cache_count();
+        int g10_cap  = g10_vram_cache_capacity();
+        uint64_t g10_h   = g10_vram_cache_hits();
+        uint64_t g10_m   = g10_vram_cache_misses();
+        uint64_t g10_ev  = g10_vram_cache_evictions();
+        double g10_rate  = (g10_h+g10_m) ? 100.0*g10_h/(g10_h+g10_m) : 0.0;
+        size_t g10_bytes = g10_vram_cache_bytes();
+        printf("G10 VRAM cache: %d/%d experts resident (%d evictions) | %.2f GB VRAM | %.1f%% hit rate (%llu/%llu)\n",
+               g10_cnt, g10_cap, g10_ev, g10_bytes/1e9, g10_rate,
+               (unsigned long long)g10_h, (unsigned long long)(g10_h+g10_m));
+    }
 #endif
     if(g_looka){
         const char *nm[3]={"previous token (=SPEC prefetch)","layer input, skip attention","next layer (one step ahead)"};

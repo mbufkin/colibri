@@ -80,6 +80,21 @@ LDFLAGS  += -L$(CUDA_HOME)/lib64 -Wl,-rpath,$(CUDA_HOME)/lib64 -lcudart -lstdc++
 CUDA_OBJ  = backend_cuda.o
 endif
 
+# G10=1 enables the DGX Spark / GB10 VRAM expert cache (overlays CUDA).
+# Requires CUDA=1. Adds g10_vram_cache.o and -DCOLI_G10_VRAM_CACHE.
+G10       ?= 0
+G10_DIR   ?= ../g10
+G10_OBJ   =
+ifeq ($(G10),1)
+ifeq ($(CUDA),0)
+$(error G10=1 requires CUDA=1)
+endif
+CFLAGS   += -DCOLI_G10_VRAM_CACHE -I$(G10_DIR)
+G10_OBJ   = $(G10_DIR)/g10_vram_cache.o
+$(G10_DIR)/g10_vram_cache.o: $(G10_DIR)/g10_vram_cache.c $(G10_DIR)/g10_vram_cache.h
+	$(CC) $(CFLAGS) -c $(G10_DIR)/g10_vram_cache.c -o $@
+endif
+
 # METAL=1 adds an opt-in Apple-GPU backend (macOS only). The shader is compiled at
 # runtime, so no Xcode / offline metal compiler is required. Default build unchanged.
 METAL     ?= 0
@@ -99,8 +114,8 @@ all: glm$(EXE)
 # phony 'glm' → 'glm.exe' on Windows (so 'make glm' and 'coli build' work on every platform)
 glm: glm$(EXE)
 
-glm$(EXE): glm.c st.h json.h tok.h tok_unicode.h compat.h grammar.h $(CUDA_OBJ) $(METAL_OBJ)
-	$(CC) $(CFLAGS) glm.c $(CUDA_OBJ) $(METAL_OBJ) -o glm$(EXE) $(LDFLAGS)
+glm$(EXE): glm.c st.h json.h tok.h tok_unicode.h compat.h grammar.h $(CUDA_OBJ) $(METAL_OBJ) $(G10_OBJ)
+	$(CC) $(CFLAGS) glm.c $(CUDA_OBJ) $(METAL_OBJ) $(G10_OBJ) -o glm$(EXE) $(LDFLAGS)
 
 backend_cuda.o: backend_cuda.cu backend_cuda.h
 	@command -v $(NVCC) >/dev/null 2>&1 || { echo "nvcc not found: set CUDA_HOME or NVCC" >&2; exit 1; }
@@ -167,6 +182,7 @@ check:
 
 clean:
 	rm -f olmoe$(EXE) glm$(EXE) iobench$(EXE) backend_cuda.o backend_cuda_test$(EXE) backend_cuda_bench$(EXE) backend_metal.o backend_metal_test $(TEST_BINS)
+	rm -f $(G10_DIR)/g10_vram_cache.o
 	rm -rf tests/__pycache__
 
 .PHONY: all glm cuda-test cuda-bench portable test-c test-python test check clean

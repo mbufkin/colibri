@@ -1,0 +1,10 @@
+# G10-specific Makefile fragment
+# Include from the main Makefile to build the VRAM cache module.
+
+G10_DIR := ../g10
+
+G10_OBJ := $(G10_DIR)/g10_vram_cache.o
+G10_CFLAGS := -I$(G10_DIR)
+
+$(G10_DIR)/g10_vram_cache.o: $(G10_DIR)/g10_vram_cache.c $(G10_DIR)/g10_vram_cache.h
+	$(CC) $(CFLAGS) $(G10_CFLAGS) -c $(G10_DIR)/g10_vram_cache.c -o $@
