@@ -177,6 +177,9 @@ typedef struct {
 static void usage_save(Model *m);        /* cache che impara: definita accanto a stats_dump */
 #ifdef COLI_CUDA
 static int g_cuda_enabled;
+#ifdef COLI_G10_VRAM_CACHE
+#include "../g10/g10_vram_hook.c"
+#endif
 static double g_cuda_expert_gb;
 static int g_cuda_dense;
 static int g_cuda_release_host;
@@ -3614,9 +3617,6 @@ int main(int argc, char **argv){
         if(g_cuda_ndev<1){ fprintf(stderr,"invalid COLI_GPUS: use a list such as 0,1,2\n"); return 2; }
         g_cuda_enabled=coli_cuda_init(g_cuda_devices,g_cuda_ndev);
         if(!g_cuda_enabled){ fprintf(stderr,"[CUDA] requested backend is unavailable\n"); return 2; }
-#ifdef COLI_G10_VRAM_CACHE
-#include "../g10/g10_vram_hook.c"
-#endif
         g10_vram_init(0);
     }
     g_cuda_dense=getenv("CUDA_DENSE")?atoi(getenv("CUDA_DENSE")):0;
