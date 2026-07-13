@@ -11,6 +11,7 @@
 #ifndef G10_VRAM_CACHE_H
 #define G10_VRAM_CACHE_H
 
+#include <stddef.h>
 #include <stdint.h>
 
 #ifdef __cplusplus
